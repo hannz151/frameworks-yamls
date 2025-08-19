@@ -1,33 +1,41 @@
 parameters:
-- name: validationRules
-  type: object
-  default:
-  - sourceBranches:
-    - 'refs/heads/team/team-*'
-    - 'refs/heads/sprint/sprint-*'
-    - 'refs/heads/task-resolution/*'
-    - 'refs/heads/QA'
-    targetBranch: 'refs/heads/develop'
-  - sourceBranches:
-    - 'refs/heads/develop'
-    - 'refs/heads/task-resolution/*'
-    - 'refs/heads/master'
-    targetBranch: 'refs/heads/QA'
-  - sourceBranches:
-    - 'refs/heads/QA'
-    - 'refs/heads/task-resolution/*'
-    targetBranch: 'refs/heads/release/*'
-  - sourceBranches:
-    - 'refs/heads/release/*'
-    - 'refs/heads/task-resolution/*'
-    - 'refs/heads/hotfix/hotfix-*'
-    targetBranch: 'refs/heads/master'
+  - name: validationRules
+    type: object
+    default:
+      - sourceBranches:
+          - 'refs/heads/task/task-*'
+          - 'refs/heads/task-resolution/*'
+        targetBranch: 'refs/heads/feature/feature-*'
+      - sourceBranches:
+          - 'refs/heads/team/team-*'
+          - 'refs/heads/sprint/sprint-*'
+          - 'refs/heads/task-resolution/*'
+          - 'refs/heads/QA'
+        targetBranch: 'refs/heads/develop'
+      - sourceBranches:
+          - 'refs/heads/develop'
+          - 'refs/heads/task-resolution/*'
+          - 'refs/heads/master'
+        targetBranch: 'refs/heads/QA'
+      - sourceBranches:
+          - 'refs/heads/QA'
+          - 'refs/heads/task-resolution/*'
+        targetBranch: 'refs/heads/release/*'
+      - sourceBranches:
+          - 'refs/heads/task/task-*'
+        targetBranch: 'refs/heads/hotfix/hotfix-*'
+      - sourceBranches:
+          - 'refs/heads/release/*'
+          - 'refs/heads/task-resolution/*'
+          - 'refs/heads/hotfix/hotfix-*'
+        targetBranch: 'refs/heads/master'
+
 stages:
 - stage: PoliticasDoD
   displayName: "Políticas DoD"
   jobs:
   - job: PoliticasRamas
-    displayName: "\U0001F6C2 Politica de \U0001F335Ramas"
+    displayName: "🛂 Politica de 🌵Ramas"
     pool:
       name: "Agents-AutoScaling"
     condition: |
@@ -39,9 +47,69 @@ stages:
         ))
       )
     steps:
-    - task: Bash@3
-      displayName: "\U0001F50E Revision Politica de \U0001F335Ramas para Pull Request"
-      inputs:
-        targetType: inline
-        script: "echo \"\U0001F6C2 Politica de \U0001F335Ramas\"\n\nsource_branch=\"$(System.PullRequest.SourceBranch)\"\ntarget_branch=\"$(System.PullRequest.TargetBranch)\"\n\nPR_COLLECTION_URI=\"$(System.PullRequest.SourceRepositoryUri)\"\nPR_TARGET_REPO_NAME=\"${PR_COLLECTION_URI##*/}\"\nPR_ID=\"$(System.PullRequest.PullRequestId)\"\nPR_LINK=\"$(System.PullRequest.SourceRepositoryUri)/pullrequest/${PR_ID}\"\n\nif [[ \"$PR_TARGET_REPO_NAME\" = \"properties\" || \"$PR_TARGET_REPO_NAME\" = \"pipelines-projects\" ]]; then\n  echo \"ℹ️ El PR proviene de un repositorio excluido ('$PR_TARGET_REPO_NAME'). Se omite validación.\"\n  exit 0\nfi\n\necho \"\U0001F500 Pull Request: ${PR_LINK}\"\necho \"\U0001F5C3️ Repositorio: ${PR_TARGET_REPO_NAME}\"\n\nmatches_pattern() {\n  local branch=\"$1\"\n  local pattern=\"$2\"\n  case \"$branch\" in\n    $pattern) return 0 ;;\n    *) return 1 ;;\n  esac\n}\n\nvalidation_rules_json='[\n  {\n    \"sourceBranches\": [\n      \"refs/heads/team/team-*\",\n      \"refs/heads/sprint/sprint-*\",\n      \"refs/heads/task-resolution/*\",\n      \"refs/heads/QA\"\n    ],\n    \"targetBranch\": \"refs/heads/develop\"\n  },\n  {\n    \"sourceBranches\": [\n      \"refs/heads/develop\",\n      \"refs/heads/task-resolution/*\",\n      \"refs/heads/master\"\n    ],\n    \"targetBranch\": \"refs/heads/QA\"\n  },\n  {\n    \"sourceBranches\": [\n      \"refs/heads/QA\",\n      \"refs/heads/task-resolution/*\"\n    ],\n    \"targetBranch\": \"refs/heads/release/*\"\n  },\n  {\n    \"sourceBranches\": [\n      \"refs/heads/release/*\",\n      \"refs/heads/task-resolution/*\",\n      \"refs/heads/hotfix/hotfix-*\"\n    ],\n    \"targetBranch\": \"refs/heads/master\"\n  }\n]'\n\nis_valid=false\nrule_index=0\n\nmapfile -t rules_array < <(echo \"$validation_rules_json\" | jq -c '.[]')\n\nfor rule in \"${rules_array[@]}\"; do\n  rule_index=$((rule_index + 1))\n  \n  target_pattern=$(echo \"$rule\" | jq -r '.targetBranch')\n  \n  IFS=$'\\n' read -d '' -r -a source_patterns < <(echo \"$rule\" | jq -r '.sourceBranches[]')\n  \n  # Verificar si la rama destino coincide con el patron de la regla\n  if matches_pattern \"$target_branch\" \"$target_pattern\"; then\n    for source_pattern in \"${source_patterns[@]}\"; do\n      if matches_pattern \"$source_branch\" \"$source_pattern\"; then\n        is_valid=true\n        echo \"\U0001F4E8 PR valido: Origen '$source_branch' y destino '$target_branch' cumplen con la regla $rule_index.\"\n        break 2 # Salir de ambos bucles (del for y del for principal)\n      fi\n    done\n  fi\n  if [ \"$is_valid\" = true ]; then\n    break\n  fi\ndone\n\nif [ \"$is_valid\" = true ]; then\n  echo \"✅ Validacion Politica Exitosa.\"\n  exit 0\nelse\n  echo \"⛔ Error: La combinacion de rama de origen '$source_branch' y rama destino '$target_branch'\"\n  echo \"\U0001F6AB No esta permitida segun las reglas de la \U0001F6C2 politica definida.\"\n  exit 1\nfi\n"
+      - bash: |
+          echo "🛂 Politica de 🌵Ramas"
 
+          source_branch="$(System.PullRequest.SourceBranch)"
+          target_branch="$(System.PullRequest.TargetBranch)"
+
+          PR_COLLECTION_URI="$(System.PullRequest.SourceRepositoryUri)"
+          PR_TARGET_REPO_NAME="${PR_COLLECTION_URI##*/}"
+          PR_ID="$(System.PullRequest.PullRequestId)"
+          PR_LINK="$(System.PullRequest.SourceRepositoryUri)/pullrequest/${PR_ID}"
+
+          if [[ "$PR_TARGET_REPO_NAME" = "properties" || "$PR_TARGET_REPO_NAME" = "pipelines-projects" ]]; then
+            echo "ℹ️ El PR proviene de un repositorio excluido ('$PR_TARGET_REPO_NAME'). Se omite validación."
+            exit 0
+          fi
+
+          echo "🔀 Pull Request: ${PR_LINK}"
+          echo "🗃️ Repositorio: ${PR_TARGET_REPO_NAME}"
+
+          matches_pattern() {
+            local branch="$1"
+            local pattern="$2"
+            case "$branch" in
+              $pattern) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          
+          validation_rules_json='${{ convertToJson(parameters.validationRules) }}'
+          
+          is_valid=false
+          rule_index=0
+
+          mapfile -t rules_array < <(echo "$validation_rules_json" | jq -c '.[]')
+
+          for rule in "${rules_array[@]}"; do
+            rule_index=$((rule_index + 1))
+            
+            target_pattern=$(echo "$rule" | jq -r '.targetBranch')
+            
+            IFS=$'\n' read -d '' -r -a source_patterns < <(echo "$rule" | jq -r '.sourceBranches[]')
+            
+            # Verificar si la rama destino coincide con el patron de la regla
+            if matches_pattern "$target_branch" "$target_pattern"; then
+              for source_pattern in "${source_patterns[@]}"; do
+                if matches_pattern "$source_branch" "$source_pattern"; then
+                  is_valid=true
+                  echo "📨 PR valido: Origen '$source_branch' y destino '$target_branch' cumplen con la regla $rule_index."
+                  break 2 # Salir de ambos bucles (del for y del for principal)
+                fi
+              done
+            fi
+            if [ "$is_valid" = true ]; then
+              break
+            fi
+          done
+          
+          if [ "$is_valid" = true ]; then
+            echo "✅ Validacion Politica Exitosa."
+            exit 0
+          else
+            echo "⛔ Error: La combinacion de rama de origen '$source_branch' y rama destino '$target_branch'"
+            echo "🚫 No esta permitida segun las reglas de la 🛂 politica definida."
+            exit 1
+          fi
+        displayName: "🔎 Revision Politica de 🌵Ramas para Pull Request"
